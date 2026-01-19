@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pgsql-secret
+type: Opaque
+data:
+  pgsql-password: VGVzdDEyMz0=
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pgsql-init-sql
+data:
+  init.sql: |
+    CREATE TABLE person (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL
+    );
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pgsql-pv
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: /data/pgsql
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pgsql-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pgsql-deployment
+  labels:
+    app: pgsql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pgsql
+  template:
+    metadata:
+      labels:
+        app: pgsql
+    spec:
+      volumes:
+        - name: pgsql-volume
+          persistentVolumeClaim:
+            claimName: pgsql-pvc
+        - name: pgsql-sql-volume
+          configMap:
+            name: pgsql-init-sql
+      containers:
+        - name: pgsql-container
+          image: postgres:18.1-bookworm
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: pgsql-secret
+                  key: pgsql-password
+          volumeMounts:
+            - name: pgsql-volume
+              mountPath: /var/lib/postgresql
+            - name: pgsql-sql-volume
+              mountPath: /docker-entrypoint-initdb.d

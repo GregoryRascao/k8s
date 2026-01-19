@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pgsql-secret
+type: Opaque
+data:
+  pgsql-password: VGVzdDEyMz0=
+
+---
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pgsql-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: /pgsql-data
+  storageClassName: manual
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: 
+  name: pgsql-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: manual
+
+---
+
+apiVersion: v1 
+kind: Pod
+metadata:
+  name: pgsql-pod
+  labels:
+    app: pgsql
+spec:
+  volumes:
+    - name: pgsql-volume
+      persistentVolumeClaim:
+        claimName: pgsql-pvc
+  containers:
+    - name: pgsql-container
+      image: postgres:18.1-bookworm
+      ports:
+        - containerPort: 5432
+      env:
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: pgsql-secret
+              key: pgsql-password
+      volumeMounts:
+        - name: pgsql-volume
+          mountPath: /var/lib/postgresql
+
+          

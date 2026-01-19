@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: hw-v1
+  labels:
+    app: hw
+    env: prod
+    version: v1
+spec:
+  containers:
+    - name: hw-v1
+      image: thaore/hw-app:V1
+      ports:
+        - containerPort: 3000
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: hw-v2
+  labels:
+    app: hw
+    env: prod
+    version: v2
+spec:
+  containers:
+    - name: hw-v2
+      image: thaore/hw-app:v2
+      ports:
+        - containerPort: 3000

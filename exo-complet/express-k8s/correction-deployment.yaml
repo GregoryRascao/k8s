@@ -1,0 +1,169 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pgsql-secret
+type: Opaque
+data:
+  pgsql-password: VGVzdDEyMz0=
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pgsql-config
+data:
+  init.sql: |
+    CREATE TABLE IF NOT EXISTS person (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL
+    );
+
+---
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pgsql-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: /pgsql-data-2
+  storageClassName: manual
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: 
+  name: pgsql-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: manual
+
+---
+
+apiVersion: apps/v1 
+kind: Deployment
+metadata:
+  name: pgsql-deployment
+  labels:
+    app: pgsql
+    env: prod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pgsql
+      env: prod
+  template:
+    metadata:
+      name: pgsql-pod
+      labels:
+        app: pgsql
+        env: prod
+    spec:
+      volumes:
+        - name: pgsql-volume
+          persistentVolumeClaim:
+            claimName: pgsql-pvc
+        - name: pgsql-init
+          configMap:
+            name: pgsql-config
+
+      containers:
+        - name: pgsql-container
+          image: postgres:18.1-bookworm
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: pgsql-secret
+                  key: pgsql-password
+          volumeMounts:
+            - name: pgsql-volume
+              mountPath: /var/lib/postgresql
+            - name: pgsql-init
+              mountPath: /docker-entrypoint-initdb.d
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: pgsql-service
+spec:
+  selector:
+    app: pgsql
+    env: prod
+  type: ClusterIP
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: express-deployement
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: express
+      env: prod
+  template:
+    metadata:
+      name: express-pod 
+      labels:
+        app: express
+        env: prod
+    spec:
+      imagePullSecrets:
+        - name: gavinc-registry
+      containers:
+        - name: express-container
+          image: registry.gavinc.be/ala-express-k8s:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: DB_HOST
+              value: pgsql-service
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_USER
+              value: postgres
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: pgsql-secret
+                  key: pgsql-password
+            - name: DB_NAME
+              value: postgres
+            
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: express-service
+spec:
+  type: NodePort
+  selector:
+    app: express
+    env: prod
+  ports:
+    - port: 8080
+      targetPort: 3000
+      nodePort: 30080
