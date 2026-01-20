@@ -595,6 +595,12 @@ kubectl describe pod <pod-name>
 # Naviguer à cluster-test/metrics
 cd cluster-test/metrics/
 
+# Installation via un curl 
+curl -LO https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+
+#Changer la ligne 135
+--kubelet-insecure-tls
+
 # Appliquer les composants de métriques
 kubectl apply -f components.yaml
 
@@ -865,4 +871,5 @@ alias kgall='kubectl get all -A'
 ---
 
 **Créé le**: 20 janvier 2026  
+**Par**    : Thaore  
 **Dernière mise à jour**: Guide complet avec tous les dossiers du projet
