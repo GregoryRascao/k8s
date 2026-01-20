@@ -7,7 +7,6 @@ data:
   pgsql-password: VGVzdDEyMz0=
 
 ---
-
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -49,11 +48,10 @@ kind: Service
 metadata:
   name: express-service
 spec:
-  type: NodePort
+  type: ClusterID
   selector:
-      app: express
-      env: prod
+    app: express
+    env: prod
   ports:
     - port: 8080
       targetPort: 3000
-      nodePort: 30080
