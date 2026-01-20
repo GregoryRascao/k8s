@@ -28,8 +28,8 @@ k8s/
 │   ├── deployment.yaml               # Configuration complète avec Secret, ConfigMap, PV
 │   └── deployment-correction.yaml    # Version corrigée
 │
-├── exo-complet/                       # Projet complet Express + Nginx
-│   ├── express-k8s/                  # Application Express
+├── exo-complet/                       # Projet complet Express + Vite + Nginx
+│   ├── express-k8s/                  # Application Express (Backend)
 │   │   ├── dockerfile                # Image Docker Express
 │   │   ├── index.js                  # Application Node.js
 │   │   ├── package.json              # Dépendances npm
@@ -39,6 +39,18 @@ k8s/
 │   │   ├── .env                      # Variables d'environnement
 │   │   ├── .dockerignore             # Fichiers ignorés Docker
 │   │   └── .gitignore                # Fichiers ignorés Git
+│   ├── vite-k8s/                     # Application Vite (Frontend)
+│   │   ├── dockerfile                # Image Docker Vite
+│   │   ├── vite-complete.yaml        # Déploiement Vite + Service
+│   │   └── frontend-app/             # Application React/Vite
+│   │       ├── src/                  # Code source (JSX, CSS)
+│   │       ├── public/               # Ressources publiques
+│   │       ├── index.html            # Template HTML
+│   │       ├── vite.config.js        # Configuration Vite
+│   │       ├── package.json          # Dépendances npm
+│   │       ├── .env                  # Variables d'environnement
+│   │       ├── .gitignore            # Fichiers ignorés Git
+│   │       └── README.md             # Documentation
 │   └── nginx/                        # Reverse proxy Nginx
 │       ├── nginx-complete.yaml       # Service Nginx + ConfigMap
 │       └── nginx.conf                # Configuration Nginx
@@ -362,9 +374,9 @@ kubectl port-forward service/nginx-service 8080:80 --address 0.0.0.0
 
 ---
 
-### 6️⃣ Projet Complet: Express + PostgreSQL + Nginx
+### 6️⃣ Projet Complet: Vite Frontend + Express Backend + PostgreSQL + Nginx
 
-#### Architecture
+#### Architecture Complète
 
 ```
 Internet
@@ -372,28 +384,32 @@ Internet
 Nginx Service (Port 30080)
     ↓
 Nginx Pod (reverse proxy)
-    ↓
-Express Service
-    ↓
-Express Pods (3 replicas) ← DB_HOST: postgres-service
-    ↓
-PostgreSQL Pod
+    ├─→ /           → Vite Service (Frontend)
+    │                ↓
+    │            Vite Pod (React app)
+    │
+    └─→ /api/       → Express Service (Backend)
+                    ↓
+                Express Pods (3 replicas) ← DB_HOST: postgres-service
+                    ↓
+                PostgreSQL Pod
 ```
 
-#### A. Déployer Express et PostgreSQL
+#### A. Déployer le Frontend, Backend et Base de Données
 
 ```bash
 # Naviguer à exo-complet
 cd exo-complet/
 
-# 1. Déployer PostgreSQL
+# 1. Déployer PostgreSQL (Base de données)
 kubectl apply -f express-k8s/db.yaml
 
 # Vérifier le déploiement
 kubectl get deployments
 kubectl get pods -l app=postgres
+kubectl get svc postgres-service
 
-# 2. Déployer Express (3 replicas)
+# 2. Déployer Express Backend (API - 3 replicas)
 kubectl apply -f express-k8s/deployment.yaml
 
 # Vérifier le déploiement
@@ -401,26 +417,45 @@ kubectl get deployments
 kubectl get pods -l app=express
 kubectl get svc express-service
 
-# 3. Déployer Nginx (reverse proxy)
+# 3. Déployer Vite Frontend (React app)
+kubectl apply -f vite-k8s/vite-complete.yaml
+
+# Vérifier le déploiement
+kubectl get deployments
+kubectl get pods -l app=vite
+kubectl get svc vite-service
+
+# 4. Déployer Nginx (reverse proxy + load balancer)
 kubectl apply -f nginx/nginx-complete.yaml
 
 # Vérifier tous les services
 kubectl get svc
+kubectl get all
 ```
 
 #### B. Tester le déploiement complet
 
 ```bash
-# 1. Port-forward pour accéder à Nginx
+# 1. Port-forward pour accéder à Nginx (reverse proxy)
 kubectl port-forward svc/nginx-service 8080:80
 
 # 2. Dans un autre terminal, accéder à l'application
+# Frontend Vite (React)
 curl http://localhost:8080
 
-# 3. Voir les logs d'Express
+# API Backend Express
+curl http://localhost:8080/api/
+
+# 3. Voir les logs du Frontend Vite
+kubectl logs -f <vite-pod-name>
+
+# 4. Voir les logs du Backend Express
 kubectl logs -f <express-pod-name>
 
-# 4. Vérifier la connexion à la base de données
+# 5. Vérifier les endpoints disponibles
+kubectl get endpoints
+
+# 6. Vérifier la connectivité Express → PostgreSQL
 kubectl exec -it <express-pod> -- node -e "
   const client = require('pg').Client;
   const c = new client({host: 'postgres-service', user: 'postgres', password: 'Test123=', database: 'postgres'});
@@ -428,11 +463,13 @@ kubectl exec -it <express-pod> -- node -e "
   c.query('SELECT 1', (err, res) => console.log(err ? 'ERROR' : 'CONNECTED'));
 "
 
-# 5. Scaler le déploiement Express
+# 7. Scaler le déploiement Express
 kubectl scale deployment express --replicas=5
 
-# 6. Voir les replicas
+# 8. Voir tous les pods
 kubectl get pods -l app=express
+kubectl get pods -l app=vite
+kubectl get pods -l app=postgres
 ```
 
 #### C. Configurer Nginx comme reverse proxy
@@ -440,17 +477,70 @@ kubectl get pods -l app=express
 ```bash
 # Le ConfigMap nginx-config dans nginx-complete.yaml contient:
 # - Écoute le port 80
-# - Proxie les requêtes /api/ vers express-service:8080
+# - Proxie les requêtes /       → vite-service:80   (Frontend)
+# - Proxie les requêtes /api/   → express-service:8080 (Backend)
 
 # Vérifier la configuration
 kubectl get configmap nginx-config -o yaml
+
+# Voir la configuration complète
+kubectl describe configmap nginx-config
 
 # Modifier la configuration (édition directe)
 kubectl edit configmap nginx-config
 
 # Redémarrer les pods Nginx pour appliquer les changements
 kubectl rollout restart deployment nginx
+
+# Vérifier que Nginx redémarre correctement
+kubectl get pods -l app=nginx
+kubectl logs -f <nginx-pod-name>
 ```
+
+#### D. Construction du Frontend Vite avec variables d'environnement
+
+Le Dockerfile du frontend Vite utilise un `ARG` pour passer l'URL de l'API lors de la construction:
+
+```dockerfile
+# Dans le dockerfile
+ARG NODE_API
+ENV VITE_API_URL=$NODE_API
+RUN npm run build  # L'URL est injectée dans la build
+```
+
+**Construire l'image Docker**:
+
+```bash
+# Naviguer au dossier vite-k8s
+cd exo-complet/vite-k8s/
+
+# Construire l'image avec l'URL de l'API
+docker build --build-arg NODE_API=http://ubuntu-server:8080/api -t vite-frontend:v1.0 .
+
+# Vérifier que l'image est créée
+docker images | grep vite-frontend
+
+# Tester l'image localement (optionnel)
+docker run -p 3000:80 vite-frontend:v1.0
+```
+
+**Pousser vers un registre privé** (ex: registre.gavinc.be):
+
+```bash
+# Tagger l'image pour le registre
+docker tag vite-frontend:v1.0 registry.gavinc.be/gre-frontend:latest
+
+# Pousser l'image
+docker push registry.gavinc.be/gre-frontend:latest
+
+# Vérifier que l'image est dans le registre
+curl http://registry.gavinc.be/v2/_catalog
+```
+
+**⚠️ Important**: 
+- L'`ARG NODE_API` est utilisé pendant la construction (build-time)
+- La variable `VITE_API_URL` est injectée dans le code React compilé
+- Changer l'URL de l'API nécessite une **nouvelle construction** de l'image
 
 ---
 
@@ -560,6 +650,23 @@ docker push localhost:5000/my-app:v1.0
 curl http://localhost:5000/v2/_catalog
 ```
 
+**Pousser les images du projet vers le registre**:
+
+```bash
+# Frontend Vite
+docker tag vite-frontend:v1.0 registry.gavinc.be/gre-frontend:latest
+docker push registry.gavinc.be/gre-frontend:latest
+
+# Backend Express
+docker tag express-backend:v1.0 registry.gavinc.be/gre:latest
+docker push registry.gavinc.be/gre:latest
+
+# Vérifier les images
+curl http://registry.gavinc.be/v2/_catalog
+curl http://registry.gavinc.be/v2/gre-frontend/tags/list
+curl http://registry.gavinc.be/v2/gre/tags/list
+```
+
 #### B. Utiliser le registre dans Kubernetes
 
 ```bash
@@ -629,6 +736,138 @@ kubectl describe pod <pod-name> | grep -A 5 "Requests\|Limits"
 
 # Voir les limites de ressources
 kubectl get pods -o json | jq '.items[] | {name: .metadata.name, resources: .spec.containers[].resources}'
+```
+
+---
+
+## � Construction des Images Docker
+
+### Frontend Vite avec Build Args
+
+Le dockerfile Vite utilise un `ARG NODE_API` pour configurer l'URL de l'API au moment de la construction.
+
+**Pourquoi?** L'application React compilée (Vite) inclut l'URL de l'API directement dans le bundle JavaScript. Cette valeur est définie au build-time, pas à l'exécution.
+
+#### Construction locale
+
+```bash
+# Naviguer au dossier du frontend
+cd exo-complet/vite-k8s/
+
+# Construire avec l'URL de l'API locale
+docker build \
+  --build-arg NODE_API=http://localhost:8080/api \
+  -t vite-frontend:v1.0 \
+  .
+
+# Construire pour une autre API
+docker build \
+  --build-arg NODE_API=http://ubuntu-server:8080/api \
+  -t vite-frontend:production \
+  .
+
+# Construire pour une API distante
+docker build \
+  --build-arg NODE_API=https://api.example.com \
+  -t vite-frontend:v1.0 \
+  .
+```
+
+#### Vérifier l'image
+
+```bash
+# Lister les images locales
+docker images | grep vite-frontend
+
+# Inspecter l'image
+docker inspect vite-frontend:v1.0
+
+# Tester localement
+docker run -p 3000:80 vite-frontend:v1.0
+# Puis accéder à http://localhost:3000
+```
+
+#### Pousser vers un registre privé
+
+```bash
+# Tagger pour le registre
+docker tag vite-frontend:v1.0 registry.gavinc.be/gre-frontend:v1.0
+docker tag vite-frontend:v1.0 registry.gavinc.be/gre-frontend:latest
+
+# Pousser les images
+docker push registry.gavinc.be/gre-frontend:v1.0
+docker push registry.gavinc.be/gre-frontend:latest
+
+# Vérifier que l'image est disponible
+curl http://registry.gavinc.be/v2/_catalog
+curl http://registry.gavinc.be/v2/gre-frontend/tags/list
+```
+
+### Backend Express (optionnel)
+
+```bash
+cd exo-complet/express-k8s/
+
+# Construire l'image
+docker build -t express-backend:v1.0 .
+
+# Tagger et pousser
+docker tag express-backend:v1.0 registry.gavinc.be/gre:v1.0
+docker push registry.gavinc.be/gre:v1.0
+```
+
+---
+
+---
+
+## 📋 Configuration des Images dans Kubernetes
+
+Dans les fichiers de déploiement YAML, les images sont référencées comme suit:
+
+```yaml
+# vite-k8s/vite-complete.yaml
+spec:
+  imagePullSecrets:
+    - name: gavinc-registry  # Secret pour l'authentification au registre
+  containers:
+    - name: vite-container
+      image: registry.gavinc.be/gre-frontend:latest  # URL complète de l'image
+      ports:
+        - containerPort: 80
+```
+
+#### Créer un secret pour le registre privé
+
+```bash
+# Créer un secret docker-registry
+kubectl create secret docker-registry gavinc-registry \
+  --docker-server=registry.gavinc.be \
+  --docker-username=<username> \
+  --docker-password=<password> \
+  --docker-email=<email>
+
+# Vérifier le secret
+kubectl get secrets
+kubectl describe secret gavinc-registry
+
+# Voir le contenu du secret (encodé)
+kubectl get secret gavinc-registry -o jsonpath='{.data.\.dockerconfigjson}' | base64 -d
+```
+
+#### Redéployer après construction d'une nouvelle image
+
+```bash
+# Si vous avez changé l'URL de l'API et rebuild le frontend:
+docker build --build-arg NODE_API=http://new-api:8080 -t vite-frontend:v1.1 .
+docker tag vite-frontend:v1.1 registry.gavinc.be/gre-frontend:latest
+docker push registry.gavinc.be/gre-frontend:latest
+
+# Dans Kubernetes, redémarrer les pods pour qu'il tire la nouvelle image
+kubectl rollout restart deployment vite
+
+# Vérifier le redéploiement
+kubectl get pods -l app=vite
+kubectl logs -f <new-vite-pod-name>
 ```
 
 ---
