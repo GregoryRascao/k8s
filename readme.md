@@ -841,8 +841,10 @@ alias ke='kubectl exec'
 alias kaf='kubectl apply -f'
 alias kdel='kubectl delete'
 alias kgp='kubectl get pods'
+alias ktp='kubectl top pods'
 alias kgs='kubectl get svc'
 alias kgd='kubectl get deployments'
+alias kga='kubectl get all'
 alias kgall='kubectl get all -A'
 ```
 

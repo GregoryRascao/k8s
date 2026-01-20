@@ -7,6 +7,7 @@ data:
   pgsql-password: VGVzdDEyMz0=
 
 ---
+
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -19,24 +20,26 @@ data:
     );
 
 ---
+
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: pgsql-pv2
+  name: pgsql-pv
 spec:
   capacity:
     storage: 1Gi
   accessModes:
     - ReadWriteOnce
   hostPath:
-    path: /pgsql-data-31
+    path: /pgsql-data-2
   storageClassName: manual
 
 ---
+
 apiVersion: v1
 kind: PersistentVolumeClaim
-metadata:
-  name: pgsql-pvc2
+metadata: 
+  name: pgsql-pvc
 spec:
   accessModes:
     - ReadWriteOnce
@@ -46,7 +49,8 @@ spec:
   storageClassName: manual
 
 ---
-apiVersion: apps/v1
+
+apiVersion: apps/v1 
 kind: Deployment
 metadata:
   name: pgsql-deployment
@@ -69,7 +73,7 @@ spec:
       volumes:
         - name: pgsql-volume
           persistentVolumeClaim:
-            claimName: pgsql-pvc2
+            claimName: pgsql-pvc
         - name: pgsql-init
           configMap:
             name: pgsql-config
@@ -92,6 +96,7 @@ spec:
               mountPath: /docker-entrypoint-initdb.d
 
 ---
+
 apiVersion: v1
 kind: Service
 metadata:
@@ -107,19 +112,19 @@ spec:
       targetPort: 5432
 
 ---
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: express-deployement
 spec:
-  replicas: 1
   selector:
     matchLabels:
       app: express
       env: prod
   template:
     metadata:
-      name: express-pod
+      name: express-pod 
       labels:
         app: express
         env: prod
@@ -128,7 +133,7 @@ spec:
         - name: gavinc-registry
       containers:
         - name: express-container
-          image: registry.gavinc.be/gre:latest
+          image: registry.gavinc.be/final-express:1.0
           ports:
             - containerPort: 3000
           env:
@@ -146,14 +151,36 @@ spec:
             - name: DB_NAME
               value: postgres
           resources:
-            requests:
-              memory: 50Mi
+            requests: 
               cpu: 0.5
+              memory: 50Mi
             limits:
-              memory: 200Mi
-              cpu: "1"
+              cpu: 1
+              memory: 500Mi
+            
+---
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: express-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: express-deployement
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 50
 
 ---
+
 apiVersion: v1
 kind: Service
 metadata:
@@ -164,26 +191,5 @@ spec:
     app: express
     env: prod
   ports:
-    - port: 8080
+    - port: 3000
       targetPort: 3000
-
----
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: nginx-proxy-hpa
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: nginx-proxy
-  minReplicas: 1
-  maxReplicas: 5
-  metrics:
-    - type: Resource
-      resource:
-        name: memory
-        target:
-          type: Utilization
-          averageUtilization: 50
-
